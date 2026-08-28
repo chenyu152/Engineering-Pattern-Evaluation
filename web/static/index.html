@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Engineering Pattern & Decision Engine | 架构方案证据决策系统</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Vis.js for Network Graph -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo-area">
+                <div class="logo-icon">🏛️</div>
+                <div class="logo-text">
+                    <h2>Engineering Engine</h2>
+                    <span>MADR & Evidence Graph</span>
+                </div>
+            </div>
+            
+            <nav class="nav-menu">
+                <button class="nav-btn active" data-tab="overview">
+                    <span class="icon">📊</span> 全局仪表盘
+                </button>
+                <button class="nav-btn" data-tab="evaluator">
+                    <span class="icon">🎯</span> 架构决策评估器
+                </button>
+                <button class="nav-btn" data-tab="graph">
+                    <span class="icon">🕸️</span> 证据拓扑图谱
+                </button>
+                <button class="nav-btn" data-tab="library">
+                    <span class="icon">📚</span> 方案与代码库
+                </button>
+                <button class="nav-btn" data-tab="sandbox">
+                    <span class="icon">🧪</span> 沙箱测试审计
+                </button>
+                <button class="nav-btn" data-tab="miner">
+                    <span class="icon">⛏️</span> 仓库逆向挖掘
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="system-status">
+                    <span class="pulse-dot"></span>
+                    <span id="system-status-text">CBR Engine: Ready</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Topbar Header -->
+            <header class="topbar">
+                <h1 id="page-title">📊 全局概览与证据金字塔</h1>
+                <div class="top-actions">
+                    <button class="btn btn-secondary" onclick="refreshData()">🔄 刷新数据</button>
+                    <button class="btn btn-primary" onclick="switchTab('evaluator')">✨ 发起方案决策</button>
+                </div>
+            </header>
+
+            <!-- TAB 1: OVERVIEW -->
+            <section id="tab-overview" class="tab-content active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon blue">📦</div>
+                        <div class="stat-info">
+                            <span class="stat-label">总沉淀架构方案</span>
+                            <h3 id="stat-total-patterns">13</h3>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon green">🧪</div>
+                        <div class="stat-info">
+                            <span class="stat-label">沙箱实测验证 (L3)</span>
+                            <h3 id="stat-controlled-count">13</h3>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon purple">🕸️</div>
+                        <div class="stat-info">
+                            <span class="stat-label">证据图谱拓扑节点</span>
+                            <h3 id="stat-graph-nodes">48</h3>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon orange">⚡</div>
+                        <div class="stat-info">
+                            <span class="stat-label">活跃方案健康率</span>
+                            <h3 id="stat-active-rate">100%</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid-2col">
+                    <div class="card">
+                        <h3>📐 证据等级分布 (Evidence Pyramid)</h3>
+                        <div id="evidence-pyramid-bars" class="pyramid-container"></div>
+                    </div>
+                    <div class="card">
+                        <h3>🏷️ 领域分类占比</h3>
+                        <div id="category-distribution-list" class="category-list"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 2: ARCHITECTURE EVALUATOR & DECISION -->
+            <section id="tab-evaluator" class="tab-content">
+                <div class="card">
+                    <h3>🎯 任务需求与场景约束分析</h3>
+                    <p class="subtitle">输入开发任务或架构目标，系统将自动识别约束，并在证据库中匹配最优 Pattern，输出 Trade-off 权衡矩阵与防坑指南。</p>
+                    <div class="input-row">
+                        <input type="text" id="eval-query-input" class="text-input" placeholder="例如：给异步订单系统引入基于 Redis Stream 的消费组重试机制，要求低延迟且不引入额外中间件..." value="设计一个需要并行处理复杂任务并最后汇总校验代码的 Agent 系统">
+                        <button class="btn btn-primary" onclick="runEvaluation()">⚡ 评估架构方案</button>
+                    </div>
+                </div>
+
+                <div id="eval-result-container" class="hidden">
+                    <!-- Task Analysis Box -->
+                    <div class="card highlight-card">
+                        <div class="card-header">
+                            <h4>📋 需求解析与约束画像</h4>
+                            <span id="eval-inferred-cat" class="badge badge-purple">Agentic_Workflow</span>
+                        </div>
+                        <div id="eval-analysis-details" class="analysis-grid"></div>
+                    </div>
+
+                    <!-- Trade-off Matrix Table -->
+                    <div class="card">
+                        <h3>⚖️ 架构方案对比与权衡矩阵 (Trade-off Matrix)</h3>
+                        <div class="table-wrapper">
+                            <table class="data-table" id="tradeoff-table">
+                                <thead>
+                                    <tr>
+                                        <th>候选架构方案</th>
+                                        <th>适用评分</th>
+                                        <th>核心优势 (Advantages)</th>
+                                        <th>权衡代价 (Drawbacks)</th>
+                                        <th>失败边界 (Failure Modes)</th>
+                                        <th>裁决结论</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Final Selection & Solve Action -->
+                    <div class="card action-card">
+                        <div class="action-header">
+                            <div>
+                                <h3 id="selected-pattern-title">🎯 最终推荐方案：Evaluator-Optimizer Workflow</h3>
+                                <p id="selected-pattern-rationale" class="text-muted"></p>
+                            </div>
+                            <button class="btn btn-success" onclick="generateSolutionCode()">🚀 一键生成变异代码与沙箱单测</button>
+                        </div>
+                        <div id="solution-output-area" class="hidden code-output-box">
+                            <h4>💻 生成的落地代码与单测套件 (Sandbox Verified)</h4>
+                            <div class="code-tabs">
+                                <button class="tab-btn active" onclick="switchCodeTab('sol')">solution.py</button>
+                                <button class="tab-btn" onclick="switchCodeTab('test')">test_solution.py</button>
+                                <button class="tab-btn" onclick="switchCodeTab('adr')">ARCHITECTURE_DECISION.md</button>
+                            </div>
+                            <pre><code id="code-display-block"></code></pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: EVIDENCE GRAPH EXPLORER -->
+            <section id="tab-graph" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>🕸️ 交互式证据与拓扑关系图谱 (Evidence Graph)</h3>
+                        <div class="graph-legend">
+                            <span class="legend-item"><span class="dot blue"></span> 架构方案 (Pattern)</span>
+                            <span class="legend-item"><span class="dot purple"></span> 领域分类 (Category)</span>
+                            <span class="legend-item"><span class="dot green"></span> 权威标准 (Standard)</span>
+                            <span class="legend-item"><span class="dot orange"></span> 基础设施 (Infra)</span>
+                            <span class="legend-item"><span class="dot red"></span> 失败边界 (Failure Mode)</span>
+                            <span class="legend-item"><span class="dot gray"></span> 竞品备选 (Alternative)</span>
+                        </div>
+                    </div>
+                    <div id="vis-graph-container" class="network-container"></div>
+                </div>
+            </section>
+
+            <!-- TAB 4: PATTERN & CODE LIBRARY -->
+            <section id="tab-library" class="tab-content">
+                <div class="filter-bar">
+                    <input type="text" id="lib-search-input" class="text-input" placeholder="🔍 搜索方案名称、问题或关键词..." oninput="filterLibrary()">
+                    <select id="lib-category-select" class="select-input" onchange="filterLibrary()">
+                        <option value="">全部领域分类</option>
+                        <option value="Agentic_Workflow">Agentic_Workflow</option>
+                        <option value="Agentic_Multi_Agent">Agentic_Multi_Agent</option>
+                        <option value="Backend_Distributed">Backend_Distributed</option>
+                        <option value="Data_Persistence">Data_Persistence</option>
+                        <option value="Fault_Tolerance">Fault_Tolerance</option>
+                    </select>
+                </div>
+
+                <div id="pattern-cards-grid" class="cards-grid"></div>
+            </section>
+
+            <!-- TAB 5: LIVE SANDBOX AUDITOR -->
+            <section id="tab-sandbox" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <h3>🧪 实时沙箱健康度审计器 (Sandbox Auditor)</h3>
+                            <p class="subtitle">在隔离临时子进程沙箱中运行所有方案自带的单元测试套件，重新评估时效性与置信度。</p>
+                        </div>
+                        <button class="btn btn-primary" onclick="runSandboxAudit()">▶️ 运行全量沙箱审计</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="table-wrapper">
+                        <table class="data-table" id="audit-table">
+                            <thead>
+                                <tr>
+                                    <th>方案 ID</th>
+                                    <th>方案名称</th>
+                                    <th>沙箱测试结果</th>
+                                    <th>更新后置信度</th>
+                                    <th>生命周期状态</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted">点击上方按钮启动全量沙箱测试审计</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 6: REPOSITORY MINER -->
+            <section id="tab-miner" class="tab-content">
+                <div class="card">
+                    <h3>⛏️ GitHub / 本地代码仓库 ADR 逆向挖掘器</h3>
+                    <p class="subtitle">输入本地项目目录路径，挖掘器将自动发现 `docs/adr/`、`decisions/` 以及架构设计文档，提取结构化 DecisionSlice 并通过沙箱初验入库。</p>
+                    <div class="input-row">
+                        <input type="text" id="miner-path-input" class="text-input" placeholder="输入代码仓库本地路径 (例如: D:/MyProject)..." value="./seeds">
+                        <button class="btn btn-primary" onclick="runRepoMining()">🔍 开始逆向挖掘</button>
+                    </div>
+                </div>
+
+                <div id="miner-results-card" class="card hidden">
+                    <h3>📊 挖掘结果统计</h3>
+                    <div id="miner-summary-box" class="analysis-grid"></div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Pattern Detail Modal -->
+    <div id="detail-modal" class="modal-backdrop hidden" onclick="closeModal(event)">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3 id="modal-pattern-title">方案详情</h3>
+                <button class="close-btn" onclick="closeModal(null)">✕</button>
+            </div>
+            <div class="modal-body" id="modal-pattern-body"></div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
