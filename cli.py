@@ -21,7 +21,10 @@ from engine.cbr_orchestrator import CBROrchestrator
 from evaluator.stale_detector import StaleDetector
 from evaluator.sandbox_runner import SandboxRunner
 from evaluator.evidence_scorer import EvidenceScorer
+from lifecycle.watchdog_daemon import WatchdogDaemon
 from ingestion.github_miner import RepositoryMiner
+from ingestion.github_live_miner import GitHubLiveMiner
+from ingestion.swe_bench_extractor import SWEBenchExtractor
 
 app = typer.Typer(help="Engineering Pattern Evaluation & Decision Engine CLI")
 console = Console(highlight=False)
@@ -170,18 +173,59 @@ def audit():
     console.print(table)
 
 @app.command()
-def mine(path: str = typer.Argument(..., help="Path to repository or ADR folder to mine")):
-    """Mine ADRs and architecture decisions from a local directory or repository."""
+def daemon(
+    interval: int = typer.Option(3600, "--interval", "-i", help="Audit interval in seconds")
+):
+    """Run the continuous lifecycle watchdog daemon in foreground."""
     repo = HybridRepository()
-    miner = RepositoryMiner(repository=repo)
-    results = miner.mine_directory(path)
+    if not repo.list_all():
+        seed_database(repo)
 
+    console.print(f"[bold green]Starting Lifecycle Watchdog Daemon (Interval: {interval}s)...[/bold green]")
+    watchdog = WatchdogDaemon(repository=repo, check_interval_seconds=interval)
+    watchdog.run_cycle_now()
+    watchdog.start()
+    try:
+        import time
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        watchdog.stop()
+        console.print("[yellow]Watchdog daemon stopped by user.[/yellow]")
+
+@app.command(name="mine-github")
+def mine_github(
+    repo_name: str = typer.Argument(..., help="Target GitHub repository (e.g. 'fastapi/fastapi')"),
+    max_items: int = typer.Option(5, "--limit", "-l", help="Max PRs to fetch")
+):
+    """Live mining of PRs and architecture refactor discussions from a public GitHub repository."""
+    repo = HybridRepository()
+    miner = GitHubLiveMiner(repository=repo)
+    console.print(f"[bold cyan]Fetching merged PRs and architecture decisions from https://github.com/{repo_name}...[/bold cyan]")
+    res = miner.mine_repository_online(repo_name, max_items=max_items)
     console.print(Panel(
-        f"[bold]Scanned Path:[/bold] {results['scanned_directory']}\n"
-        f"[bold]ADRs Found:[/bold] {results['adr_files_found']}\n"
-        f"[bold green]Successfully Mined & Ingested:[/bold green] {results['successfully_mined_count']}\n"
-        f"[bold]Mined IDs:[/bold] {', '.join(results['mined_slice_ids']) if results['mined_slice_ids'] else 'None'}",
-        title="Repository ADR Mining Results",
+        f"[bold]Repository:[/bold] {res['repository']}\n"
+        f"[bold]PRs Fetched:[/bold] {res['prs_fetched']}\n"
+        f"[bold green]Mined Decision Slices:[/bold green] {res['mined_decisions_count']}\n"
+        f"[bold]Mined IDs:[/bold] {', '.join(res['mined_slice_ids']) if res['mined_slice_ids'] else 'None'}",
+        title="GitHub Live Mining Outcome",
+        border_style="green"
+    ))
+
+@app.command(name="ingest-swe")
+def ingest_swe(
+    jsonl_path: str = typer.Argument(..., help="Path to SWE-bench / SWE-smith JSONL file")
+):
+    """Batch ingest SWE-bench industrial defect-fixing trajectories."""
+    repo = HybridRepository()
+    extractor = SWEBenchExtractor(repository=repo)
+    console.print(f"[bold cyan]Ingesting SWE-bench trajectories from {jsonl_path}...[/bold cyan]")
+    res = extractor.ingest_jsonl_file(jsonl_path)
+    console.print(Panel(
+        f"[bold]Source File:[/bold] {res['source_file']}\n"
+        f"[bold green]Ingested Fix Cases:[/bold green] {res['ingested_count']}\n"
+        f"[bold]IDs:[/bold] {', '.join(res['ingested_ids'])}",
+        title="SWE-bench Trajectory Ingestion Outcome",
         border_style="green"
     ))
 

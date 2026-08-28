@@ -1,0 +1,3 @@
+{"instance_id": "pytest_dev__pytest_5221", "repo": "pytest-dev/pytest", "problem_statement": "Fixture lookup fails when fixture scope is parameterized inside class hierarchy.", "patch": "def fix_fixture_lookup(): return True", "resolved": true}
+{"instance_id": "django__django_11099", "repo": "django/django", "problem_statement": "UsernameValidator regex fails on usernames ending with newline character in Python 3.", "patch": "def fix_username_validator(): return True", "resolved": true}
+{"instance_id": "psf__requests_2148", "repo": "psf/requests", "problem_statement": "Socket exception in stream chunk reading is not cleanly wrapped into RequestsException.", "patch": "def fix_socket_exception_wrapper(): return True", "resolved": true}

@@ -23,7 +23,12 @@ class SandboxRunner:
         """
         Executes code slice + test code in an isolated temporary directory using pytest.
         """
-        with tempfile.TemporaryDirectory(dir=str(self.work_dir)) as tmp_dir:
+        # Python 3.10+ supports ignore_cleanup_errors=True for Windows temp directories
+        temp_kwargs = {"dir": str(self.work_dir)}
+        if sys.version_info >= (3, 10):
+            temp_kwargs["ignore_cleanup_errors"] = True
+
+        with tempfile.TemporaryDirectory(**temp_kwargs) as tmp_dir:
             tmp_path = Path(tmp_dir)
             impl_file = tmp_path / "solution.py"
             test_file = tmp_path / "test_solution.py"

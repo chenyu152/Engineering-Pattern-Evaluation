@@ -1,4 +1,5 @@
 import os
+import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Query, Body
@@ -12,12 +13,17 @@ from engine.cbr_orchestrator import CBROrchestrator
 from evaluator.sandbox_runner import SandboxRunner
 from evaluator.evidence_scorer import EvidenceScorer
 from evaluator.stale_detector import StaleDetector
+from lifecycle.watchdog_daemon import WatchdogDaemon
 from ingestion.github_miner import RepositoryMiner
+from ingestion.github_live_miner import GitHubLiveMiner
+from ingestion.swe_bench_extractor import SWEBenchExtractor
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Engineering Pattern Evaluation & Decision Engine API",
-    version="1.0.0",
-    description="REST API for Engineering Decision Slices, CBR Architecture Evaluation, and Evidence Graph"
+    version="2.0.0",
+    description="REST API for Engineering Decision Slices, CBR Architecture Evaluation, Auto-Healing Daemon, and Evidence Graph"
 )
 
 app.add_middleware(
@@ -28,7 +34,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global Repository & Engine instances
+# Global instances
 repo = HybridRepository()
 if not repo.list_all():
     seed_database(repo)
@@ -38,8 +44,11 @@ sandbox = SandboxRunner()
 scorer = EvidenceScorer()
 detector = StaleDetector(repository=repo, sandbox=sandbox, scorer=scorer)
 miner = RepositoryMiner(repository=repo, sandbox=sandbox)
+github_live_miner = GitHubLiveMiner(repository=repo, sandbox=sandbox)
+swe_extractor = SWEBenchExtractor(repository=repo)
+watchdog = WatchdogDaemon(repository=repo)
 
-# Request / Response Schemas
+# Request Models
 class EvaluateRequest(BaseModel):
     query: str
 
@@ -47,14 +56,19 @@ class SolveRequest(BaseModel):
     query: str
     output_dir: Optional[str] = None
 
-class MineRequest(BaseModel):
+class MineLocalRequest(BaseModel):
     directory_path: str
+
+class MineGitHubRequest(BaseModel):
+    repo_owner_name: str
+    max_items: int = 5
+
+class MineSWERequest(BaseModel):
+    jsonl_path: str
 
 @app.get("/api/overview")
 def get_overview():
     patterns = repo.list_all()
-    
-    # Evidence level counts
     evidence_dist = {}
     category_dist = {}
     status_dist = {}
@@ -62,10 +76,8 @@ def get_overview():
     for p in patterns:
         el = p.evidence.evidence_level.value
         evidence_dist[el] = evidence_dist.get(el, 0) + 1
-        
         cat = p.category.value
         category_dist[cat] = category_dist.get(cat, 0) + 1
-        
         st = p.status.value
         status_dist[st] = status_dist.get(st, 0) + 1
 
@@ -75,7 +87,8 @@ def get_overview():
         "category_distribution": category_dist,
         "status_distribution": status_dist,
         "graph_node_count": repo.evidence_graph.graph.number_of_nodes(),
-        "graph_edge_count": repo.evidence_graph.graph.number_of_edges()
+        "graph_edge_count": repo.evidence_graph.graph.number_of_edges(),
+        "daemon_status": watchdog.get_status()
     }
 
 @app.get("/api/patterns")
@@ -145,14 +158,12 @@ def solve_task(req: SolveRequest):
 
 @app.get("/api/graph")
 def get_graph_data():
-    """Returns nodes and edges formatted for Vis.js Network graph visualization."""
     g = repo.evidence_graph.graph
     nodes = []
     edges = []
 
-    # Styling mapping for node types
     type_styles = {
-        "Pattern": {"shape": "box", "color": {"background": "#3b82f6", "border": "#1d4ed8"}, "font": {"color": "#ffffff", "face": "system-ui"}},
+        "Pattern": {"shape": "box", "color": {"background": "#3b82f6", "border": "#1d4ed8"}, "font": {"color": "#ffffff"}},
         "Category": {"shape": "ellipse", "color": {"background": "#8b5cf6", "border": "#6d28d9"}, "font": {"color": "#ffffff"}},
         "Standard": {"shape": "diamond", "color": {"background": "#10b981", "border": "#047857"}, "font": {"color": "#ffffff"}},
         "InfraDependency": {"shape": "hexagon", "color": {"background": "#f59e0b", "border": "#b45309"}, "font": {"color": "#ffffff"}},
@@ -163,11 +174,9 @@ def get_graph_data():
     for node_id, data in g.nodes(data=True):
         ntype = data.get("node_type", "Pattern")
         style = type_styles.get(ntype, type_styles["Pattern"])
-        
         label = data.get("pattern_name") or data.get("name") or data.get("trigger") or node_id.split(":")[-1]
-        # Truncate label if too long
-        if len(label) > 30:
-            label = label[:27] + "..."
+        if len(label) > 32:
+            label = label[:29] + "..."
 
         nodes.append({
             "id": node_id,
@@ -190,20 +199,56 @@ def get_graph_data():
 
     return {"nodes": nodes, "edges": edges}
 
-@app.post("/api/audit")
-def audit_all_patterns():
-    results = detector.audit_all_patterns()
-    return {"audit_count": len(results), "results": results}
+# Lifecycle Watchdog API Endpoints
+@app.get("/api/daemon/status")
+def get_daemon_status():
+    return watchdog.get_status()
 
-@app.post("/api/mine")
-def mine_repository(req: MineRequest):
+@app.post("/api/daemon/start")
+def start_daemon():
+    watchdog.start()
+    return {"status": "started", "daemon_status": watchdog.get_status()}
+
+@app.post("/api/daemon/stop")
+def stop_daemon():
+    watchdog.stop()
+    return {"status": "stopped", "daemon_status": watchdog.get_status()}
+
+@app.post("/api/daemon/run-once")
+def trigger_daemon_cycle():
+    results = watchdog.run_cycle_now()
+    return {
+        "status": "completed",
+        "audited_count": len(results),
+        "results": results
+    }
+
+# Ingestion API Endpoints
+@app.post("/api/mine/local")
+def mine_local_dir(req: MineLocalRequest):
     try:
         res = miner.mine_directory(req.directory_path)
         return res
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-# Mount static frontend files
+@app.post("/api/mine/github")
+def mine_github_repo(req: MineGitHubRequest):
+    try:
+        res = github_live_miner.mine_repository_online(req.repo_owner_name, max_items=req.max_items)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/mine/swe")
+def mine_swe_dataset(req: MineSWERequest):
+    try:
+        res = swe_extractor.ingest_jsonl_file(req.jsonl_path)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# Mount static frontend
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
